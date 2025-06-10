@@ -1,6 +1,7 @@
 import random
 import math
 import uuid
+import numpy as np
 
 class Genome:
     def __init__(self, genes=None, never_consume=False):
@@ -72,7 +73,7 @@ class Genome:
 class Cell:
     def __init__(self, genome, position, dna=None):
         self.genome = genome
-        self.position = position
+        self.position = np.array(position, dtype=float) # Use a numpy array for position
         self.energy = 20
         self.age = 0
         self.dna = dna or self.genome.encode_genes()
@@ -105,25 +106,21 @@ class Cell:
 
         self.energy -= self.radiation_sensitivity * dt
 
+        # Movement calculation using numpy
         if self.genome.genes['has_tail']:
             speed = self.genome.genes['speed']
-            dx = math.cos(self.angle) * speed * dt
-            dy = math.sin(self.angle) * speed * dt
+            velocity = np.array([math.cos(self.angle), math.sin(self.angle)]) * speed * dt
         else:
-            dx = random.uniform(-1, 1) * self.genome.genes['speed'] * dt
-            dy = random.uniform(-1, 1) * self.genome.genes['speed'] * dt
+            velocity = np.random.uniform(-1, 1, 2) * self.genome.genes['speed'] * dt
 
-        new_x = self.position[0] + dx
-        new_y = self.position[1] + dy
+        self.position += velocity
 
         # Calculate energy loss due to movement
-        distance_moved = math.sqrt(dx ** 2 + dy ** 2)
+        distance_moved = np.linalg.norm(velocity)
         energy_loss = distance_moved * 0.1  # Adjust the multiplier as needed
         self.energy -= energy_loss
 
         self.resolve_boundary_collision(environment)
-
-        self.position = (new_x, new_y)
 
         if self.energy <= 0:
             self.genome.genes['color'] = (0.5, 0.5, 0.5)  # Turn grey
@@ -153,10 +150,11 @@ class Cell:
     def divide(self):
         child_genome = self.genome.copy()
         child_genome.mutate()
-        child_position = (
-            self.position[0] + random.choice([-8, 8]),
-            self.position[1] + random.choice([-8, 8])
-        )
+        
+        # Child position is created using numpy array now
+        offset = np.array([random.choice([-8, 8]), random.choice([-8, 8])])
+        child_position = self.position + offset
+        
         child_dna = (self.dna & 0xFFFF0000) | (random.randint(0, 65535) & 0x0000FFFF)
         child = Cell(child_genome, child_position, child_dna)
         child.type = self.type
@@ -198,10 +196,11 @@ class Cell:
         self.energy = min(100, self.energy)
 
     def die(self, environment):
-        distance = math.sqrt((self.position[0] - environment.center[0]) ** 2 + (self.position[1] - environment.center[1]) ** 2)
+        distance = np.linalg.norm(self.position - environment.center)
         if distance <= environment.radius:
-            environment.food.append((self.position[0], self.position[1]))
-        environment.remove_cell(self)
+            environment.food.append(tuple(self.position))
+        if self in environment.cells:
+            environment.remove_cell(self)
 
     def adhere_to(self, other_cell):
         if self.adhesin and other_cell.adhesin and other_cell not in self.adhered_cells:
@@ -214,38 +213,32 @@ class Cell:
             other_cell.adhered_cells.remove(self)
 
     def check_collision(self, other_cell):
-        distance = math.sqrt((self.position[0] - other_cell.position[0]) ** 2 + (self.position[1] - other_cell.position[1]) ** 2)
+        distance = np.linalg.norm(self.position - other_cell.position)
         return distance < (self.genome.genes['size'] + other_cell.genome.genes['size']) / 2
 
     def resolve_collision(self, other_cell):
-        distance = math.sqrt((self.position[0] - other_cell.position[0]) ** 2 + (self.position[1] - other_cell.position[1]) ** 2)
+        distance = np.linalg.norm(self.position - other_cell.position)
         overlap = (self.genome.genes['size'] + other_cell.genome.genes['size']) / 2 - distance
         if overlap > 0:
-            angle = math.atan2(other_cell.position[1] - self.position[1], other_cell.position[0] - self.position[0])
-            self.position = (
-                self.position[0] - math.cos(angle) * overlap / 2,
-                self.position[1] - math.sin(angle) * overlap / 2
-            )
-            other_cell.position = (
-                other_cell.position[0] + math.cos(angle) * overlap / 2,
-                other_cell.position[1] + math.sin(angle) * overlap / 2
-            )
+            # Vector from self to other_cell, normalized
+            direction = (other_cell.position - self.position) / distance
+            self.position -= direction * overlap / 2
+            other_cell.position += direction * overlap / 2
 
     def resolve_boundary_collision(self, environment):
-        distance = math.sqrt((self.position[0] - environment.center[0]) ** 2 + (self.position[1] - environment.center[1]) ** 2)
+        center_vec = np.array(environment.center)
+        distance_vec = self.position - center_vec
+        distance = np.linalg.norm(distance_vec)
+
         if distance > environment.radius - self.genome.genes['size'] / 2:
             if environment.wrap_around:
-                # Wrap around the edges
-                self.position = (
-                    (self.position[0] - environment.center[0] + environment.radius) % (2 * environment.radius) + environment.center[0],
-                    (self.position[1] - environment.center[1] + environment.radius) % (2 * environment.radius) + environment.center[1]
-                )
+                # Wrap around using numpy vector operations
+                self.position = (self.position - center_vec) % (2 * environment.radius) + center_vec - environment.radius
             else:
                 # Bounce back from the boundary
-                angle = math.atan2(environment.center[1] - self.position[1], environment.center[0] - self.position[0])
-                new_x = environment.center[0] + math.cos(angle) * (environment.radius - self.genome.genes['size'] / 2)
-                new_y = environment.center[1] + math.sin(angle) * (environment.radius - self.genome.genes['size'] / 2)
-                self.position = (new_x, new_y)
+                direction = distance_vec / distance
+                self.position = center_vec + direction * (environment.radius - self.genome.genes['size'] / 2)
+
 
 class Bacteria(Cell):
     def __init__(self, genome, position, dna=None):
@@ -294,7 +287,7 @@ class PredatorCell(Cell):
     def hunt(self, environment):
         for cell in environment.cells:
             if cell != self and self.can_consume(cell):
-                distance = math.sqrt((self.position[0] - cell.position[0]) ** 2 + (self.position[1] - cell.position[1]) ** 2)
+                distance = np.linalg.norm(self.position - cell.position)
                 if distance < self.genome.genes['size']:
                     self.consume(cell, environment)
                     break
@@ -347,4 +340,5 @@ class ReproductiveCell(Cell):
         if self.can_divide():
             for _ in range(int(self.reproduction_rate)):
                 new_cell = self.divide()
-                environment.add_cell(new_cell)
+                if new_cell:
+                    environment.add_cell(new_cell)

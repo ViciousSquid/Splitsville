@@ -101,15 +101,7 @@ class Renderer(QGraphicsView):
             self.highlight_cell(self.selected_cell)
             self.energy_label.setText(f"Energy: {self.selected_cell.energy:.2f}")
 
-        # Resolve collisions
-        for i, cell1 in enumerate(self.environment.cells):
-            for cell2 in self.environment.cells[i+1:]:
-                if cell1.check_collision(cell2):
-                    cell1.resolve_collision(cell2)
-
-        # Resolve boundary collisions
-        for cell in self.environment.cells:
-            cell.resolve_boundary_collision(self.environment)
+        # The collision resolution logic has been moved to environment.py for efficiency.
 
         # Restore the transformation
         self.setTransform(current_transform)
