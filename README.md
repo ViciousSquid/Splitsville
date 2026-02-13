@@ -1,4 +1,4 @@
-# Cells - A Cell Simulation
+# Cells
 
 This is a work-in-progress cell simulation built with Python and PyQt5. You can observe cells as they live, move, eat, divide, and evolve in a contained environment.
 
@@ -17,3 +17,4 @@ This is a work-in-progress cell simulation built with Python and PyQt5. You can 
 ### Prerequisites
 
 * Pyqt5
+
