@@ -68,10 +68,21 @@ class Environment:
         self.light_source = (radius, radius)
         self.light_color = (255, 255, 200)
         self.light_intensity = 1.0
-        self.light_enabled = True   # <--- NEW
+        self.light_enabled = True
 
         self._spatial_grid = SpatialGrid(cell_size=32)
         self._collision_frame = False
+
+        # Death markers: each is (x, y, cell_size, remaining_time)
+        self.death_markers = []
+
+    def add_death_marker(self, x, y, cell_size, duration=1.2):
+        """Add a temporary 'DIED' marker scaled to cell size."""
+        self.death_markers.append((x, y, cell_size, duration))
+
+    def update_death_markers(self, dt):
+        """Update marker lifetimes and remove expired ones."""
+        self.death_markers = [(x, y, sz, t - dt) for (x, y, sz, t) in self.death_markers if t - dt > 0]
 
     def add_cell(self, cell):
         self.cells.append(cell)
@@ -82,6 +93,9 @@ class Environment:
 
     def update(self, dt, generate_food=True, allow_merge=False):
         self.current_time += dt
+
+        # Update death markers (they fade over time)
+        self.update_death_markers(dt)
 
         grid = self._spatial_grid
         grid.clear()

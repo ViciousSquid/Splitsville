@@ -95,6 +95,9 @@ class Renderer(QOpenGLWidget):
         if getattr(self.environment, 'light_enabled', True):
             self._draw_light_source(painter, t)
 
+        # Draw death markers (DIED text)
+        self._draw_death_markers(painter)
+
         painter.restore()
 
         painter.setPen(QColor(255, 255, 220, 240))
@@ -444,6 +447,23 @@ class Renderer(QOpenGLWidget):
             tx = bx + math.cos(tip_a) * cilia_len
             ty = by + math.sin(tip_a) * cilia_len
             painter.drawLine(QPointF(bx, by), QPointF(tx, ty))
+
+    # -------------------------------------------------------- death markers
+    def _draw_death_markers(self, painter):
+        """Draw 'DIED' text above each active death marker, scaled by cell size."""
+        for x, y, cell_size, remaining in self.environment.death_markers:
+            alpha = min(255, int(200 * (remaining / 1.2)))
+            if alpha <= 5:
+                continue
+            # Scale font size between 6 and 14 points based on cell size (range ~4-30)
+            font_size = max(6, min(14, 6 + int(cell_size / 3.0)))
+            painter.setPen(QColor(255, 80, 80, alpha))
+            font = painter.font()
+            font.setPointSize(font_size)
+            font.setBold(True)
+            painter.setFont(font)
+            # Draw text slightly above the death position
+            painter.drawText(QPointF(x - 12, y - 12 - (font_size / 6)), "DIED")
 
     # -------------------------------------------------------- light source
     def _draw_light_source(self, painter, t):

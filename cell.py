@@ -52,7 +52,9 @@ class Genome:
             'energy_efficiency':     random.uniform(0.6, 1.4),
             'division_threshold':    random.uniform(50, 80),
             'consumption_size_ratio': random.uniform(1.5, 2.5),
-            'motility_mode':         random.choices([0,1,2], weights=[40,30,30], k=1)[0],  # none,flagellum,cilia
+            # motility_mode: 0=none, 1=flagellum, 2=cilia
+            # drastically lower flagellum chance: now only 5% have tails
+            'motility_mode':         random.choices([0,1,2], weights=[65,5,30], k=1)[0],
             'body_shape':            random.choices([0,1], weights=[80,20], k=1)[0],        # round,oval
             'can_consume':           random.choice([True, False]),
             'adhesin':               random.choice([True, False]),
@@ -271,6 +273,11 @@ class Cell:
 
         # ── Movement ─────────────────────────────────────────────────────────
         speed = genes['speed']
+        
+        # Energy‑based speed reduction (realism)
+        if self.energy < 25.0:
+            energy_factor = max(0.15, self.energy / 25.0)
+            speed *= energy_factor
 
         if motility == 1:           # Flagellum
             if self._threat_pos is not None:
@@ -403,6 +410,8 @@ class Cell:
         if math.hypot(self.position[0] - cx, self.position[1] - cy) <= environment.radius:
             environment.food.append((float(self.position[0]), float(self.position[1])))
         environment.remove_cell(self)
+        # Add death marker with cell size for scaling
+        environment.add_death_marker(self.position[0], self.position[1], self._body_size)
 
     def adhere_to(self, other):
         if self.adhesin and other.adhesin and other not in self.adhered_cells:
