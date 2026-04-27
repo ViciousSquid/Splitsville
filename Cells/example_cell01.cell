@@ -1,0 +1,18 @@
+{
+  "size": 13.07,
+  "speed": 22.81,
+  "energy_efficiency": 15.91,
+  "division_threshold": 8.83,
+  "consumption_size_ratio": 6.63,
+  "motility_mode": 2,
+  "body_shape": false,
+  "can_consume": true,
+  "adhesin": true,
+  "nitrogen_reserve": 15.57,
+  "radiation_sensitivity": 0.08,
+  "color": [
+    0.43,
+    0.52,
+    0.89
+  ]
+}
