@@ -1,7 +1,7 @@
 # Splitsville
 
 Create and observe cells as they live, move, eat, divide, and evolve
-* Learn about different types of cells
+* Learn about different types of cells (work in progress)
 * Design the genetics of your own cell, save, share, import others and face them off!
 #### Also functions as a good CPU and GPU stress tester (just click "Random" a few times and let it run!)
 
