@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QOpenGLWidget, QToolButton
 from PyQt5.QtGui import (QPainter, QColor, QPen, QBrush, QRadialGradient,
-                          QPainterPath, QLinearGradient, QTransform)
+                          QPainterPath, QLinearGradient, QTransform, QFont)
 from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
 import math
 import time
@@ -98,8 +98,12 @@ class Renderer(QOpenGLWidget):
         # Draw death markers (DIED text)
         self._draw_death_markers(painter)
 
+        # Draw floating score popups
+        self._draw_score_popups(painter)
+
         painter.restore()
 
+        # ---- HUD overlay (drawn in screen space, not transformed) ----
         painter.setPen(QColor(255, 255, 220, 240))
         font = painter.font()
         font.setPointSize(10)
@@ -109,7 +113,60 @@ class Renderer(QOpenGLWidget):
         painter.drawText(15, 60, f"Food:  {len(self.environment.food)}")
         painter.drawText(15, 78, f"Zoom:  {self._zoom:.1f}x")
 
+        # Score and combo in bottom right of viewport
+        self._draw_score_hud(painter)
+
         painter.end()
+
+    # -------------------------------------------------------- score HUD
+    def _draw_score_hud(self, painter):
+        """Draw score and combo in the bottom-right corner of the viewport."""
+        env = self.environment
+        w = self.width()
+        h = self.height()
+
+        # Score text
+        score_text = f"Score: {env.score}"
+        score_font = QFont("Arial", 14)
+        score_font.setBold(True)
+        painter.setFont(score_font)
+
+        fm = painter.fontMetrics()
+        score_width = fm.horizontalAdvance(score_text)
+        score_height = fm.height()
+
+        # Combo text
+        combo_text = ""
+        if env.combo_count > 1:
+            mult = 1.0 + (env.combo_count - 1) * 0.5
+            combo_text = f"COMBO x{mult:.1f}!"
+
+        combo_font = QFont("Arial", 11)
+        combo_font.setBold(True)
+        painter.setFont(combo_font)
+        fm_combo = painter.fontMetrics()
+        combo_width = fm_combo.horizontalAdvance(combo_text) if combo_text else 0
+        combo_height = fm_combo.height()
+
+        # Right-align with padding
+        padding = 15
+        right_x = w - padding
+
+        # Draw score
+        score_y = h - padding - combo_height - 4
+        painter.setPen(QColor(0, 0, 0, 200))
+        painter.drawText(right_x - score_width + 1, score_y + 1, score_text)
+        painter.setPen(QColor(255, 215, 0))  # Gold
+        painter.drawText(right_x - score_width, score_y, score_text)
+
+        # Draw combo below score
+        if combo_text:
+            combo_y = h - padding
+            painter.setFont(combo_font)
+            painter.setPen(QColor(0, 0, 0, 200))
+            painter.drawText(right_x - combo_width + 1, combo_y + 1, combo_text)
+            painter.setPen(QColor(255, 102, 0))  # Orange
+            painter.drawText(right_x - combo_width, combo_y, combo_text)
 
     # -------------------------------------------------------- petri dish
     def _draw_petri_dish(self, painter, t):
@@ -455,8 +512,8 @@ class Renderer(QOpenGLWidget):
             alpha = min(255, int(200 * (remaining / 1.2)))
             if alpha <= 5:
                 continue
-            # Scale font size between 6 and 14 points based on cell size (range ~4-30)
-            font_size = max(6, min(14, 6 + int(cell_size / 3.0)))
+            # Smaller range: 5–10 pt instead of 6–14 pt
+            font_size = max(5, min(10, 5 + int(cell_size / 4.0)))
             painter.setPen(QColor(255, 80, 80, alpha))
             font = painter.font()
             font.setPointSize(font_size)
@@ -464,6 +521,32 @@ class Renderer(QOpenGLWidget):
             painter.setFont(font)
             # Draw text slightly above the death position
             painter.drawText(QPointF(x - 12, y - 12 - (font_size / 6)), "DIED")
+
+    # -------------------------------------------------------- score popups
+    def _draw_score_popups(self, painter):
+        """Draw floating score popups that drift upward and fade out."""
+        for popup in self.environment.score_popups:
+            x, y, text, r, g, b, remaining, font_size = popup
+            alpha = min(255, int(255 * (remaining / self.environment.popup_lifetime)))
+            if alpha <= 5:
+                continue
+            age = self.environment.popup_lifetime - remaining
+            drift_y = age * 30
+            draw_y = y - 15 - drift_y
+
+            font = painter.font()
+            # Scale down dynamically but keep a readable floor
+            font.setPointSize(max(6, int(font_size * 0.7)))
+            font.setBold(True)
+            painter.setFont(font)
+
+            # Shadow for readability
+            painter.setPen(QColor(0, 0, 0, alpha))
+            painter.drawText(QPointF(x - 19, draw_y + 1), text)
+
+            # Main text
+            painter.setPen(QColor(r, g, b, alpha))
+            painter.drawText(QPointF(x - 20, draw_y), text)
 
     # -------------------------------------------------------- light source
     def _draw_light_source(self, painter, t):

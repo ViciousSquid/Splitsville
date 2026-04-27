@@ -76,6 +76,19 @@ class Environment:
         # Death markers: each is (x, y, cell_size, remaining_time)
         self.death_markers = []
 
+        # Score system
+        self.score = 0
+        self.combo_count = 0
+        self.last_score_time = -10.0
+        self.combo_timeout = 3.0
+        self.popup_lifetime = 1.5
+        self.score_popups = []  # (x, y, text, r, g, b, remaining_time, font_size)
+
+        # Stagger queue for floating text — prevents visual clutter when many events fire at once
+        self._popup_queue = []  # list of (x, y, text, r, g, b, font_size)
+        self._popup_stagger_timer = 0.0
+        self.popup_stagger_delay = 0.08  # seconds between each popup appearing
+
     def add_death_marker(self, x, y, cell_size, duration=1.2):
         """Add a temporary 'DIED' marker scaled to cell size."""
         self.death_markers.append((x, y, cell_size, duration))
@@ -91,8 +104,54 @@ class Environment:
         if cell in self.cells:
             self.cells.remove(cell)
 
+    def _add_score_event(self, x, y, cell_size, is_positive):
+        """Award or penalise score with combo multiplier. Queue popup for staggered release."""
+        if self.current_time - self.last_score_time > self.combo_timeout:
+            self.combo_count = 0
+        self.combo_count += 1
+        self.last_score_time = self.current_time
+
+        multiplier = 1.0 + (self.combo_count - 1) * 0.5
+        if is_positive:
+            base = 10.0
+            points = int(base * cell_size * multiplier)
+            self.score += points
+            r, g, b = 50, 255, 80
+            prefix = "+"
+        else:
+            base = 15.0
+            points = int(base * cell_size * multiplier)
+            self.score = max(0, self.score - points)
+            r, g, b = 255, 60, 60
+            prefix = "-"
+
+        text = f"{prefix}{points}"
+        if self.combo_count > 1:
+            text += f" x{multiplier:.1f}"
+
+        # Smaller dynamic font: range ~6–11 pt instead of 10–18 pt
+        font_size = max(6, min(11, int(5 + cell_size / 3)))
+
+        # Queue the popup instead of spawning immediately
+        self._popup_queue.append((x, y, text, r, g, b, font_size))
+
+    def _release_queued_popups(self, dt):
+        """Drain the stagger queue, releasing one popup every stagger_delay seconds."""
+        if not self._popup_queue:
+            self._popup_stagger_timer = 0.0
+            return
+
+        self._popup_stagger_timer += dt
+        while self._popup_stagger_timer >= self.popup_stagger_delay and self._popup_queue:
+            self._popup_stagger_timer -= self.popup_stagger_delay
+            x, y, text, r, g, b, font_size = self._popup_queue.pop(0)
+            self.score_popups.append((x, y, text, r, g, b, self.popup_lifetime, font_size))
+
     def update(self, dt, generate_food=True, allow_merge=False):
         self.current_time += dt
+
+        # Release staggered popups
+        self._release_queued_popups(dt)
 
         # Update death markers (they fade over time)
         self.update_death_markers(dt)
@@ -113,9 +172,13 @@ class Environment:
                 dead_set.add(id(cell))
                 continue
             if cell.energy <= 0.72 or cell.age >= cell.MAX_AGE:
+                self._add_score_event(float(cell.position[0]), float(cell.position[1]),
+                                      float(cell._body_size), False)
                 cell.die(self)
                 dead_set.add(id(cell))
             elif cell.can_divide():
+                self._add_score_event(float(cell.position[0]), float(cell.position[1]),
+                                      float(cell._body_size), True)
                 new_cell = cell.divide()
                 new_children.append(new_cell)
 
@@ -126,6 +189,8 @@ class Environment:
             if not self.cells:
                 break
             weakest = min(self.cells, key=lambda c: c.energy)
+            self._add_score_event(float(weakest.position[0]), float(weakest.position[1]),
+                                  float(weakest._body_size), False)
             weakest.die(self)
 
         grid.clear()
@@ -165,10 +230,14 @@ class Environment:
                         break
                     elif t1 == "Phagocyte" and cell1.can_consume(cell2):
                         cell1.consume(cell2, self)
+                        self._add_score_event(float(cell2.position[0]), float(cell2.position[1]),
+                                              float(cell2._body_size), False)
                         alive_set.discard(cell2)
                         self.remove_cell(cell2)
                     elif t2 == "Phagocyte" and cell2.can_consume(cell1):
                         cell2.consume(cell1, self)
+                        self._add_score_event(float(cell1.position[0]), float(cell1.position[1]),
+                                              float(cell1._body_size), False)
                         alive_set.discard(cell1)
                         self.remove_cell(cell1)
                         break
@@ -196,6 +265,15 @@ class Environment:
 
         if self.food and self.cells:
             self._consume_food_numpy()
+
+        # Decay combo if timed out
+        if self.current_time - self.last_score_time > self.combo_timeout:
+            self.combo_count = 0
+
+        # Update score popup lifetimes
+        self.score_popups = [(x, y, text, r, g, b, t - dt, fs)
+                             for (x, y, text, r, g, b, t, fs) in self.score_popups
+                             if t - dt > 0]
 
     def _consume_food_numpy(self):
         n_food = len(self.food)
